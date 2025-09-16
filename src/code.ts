@@ -210,29 +210,35 @@ figma.ui.onmessage = async (msg) => {
 };
 
 async function generatePrompt() {
-  const selection = figma.currentPage.selection;
+  try {
+    const selection = figma.currentPage.selection;
 
-  if (selection.length === 0) {
-    figma.ui.postMessage({ type: 'error', message: 'No selection. Please select a frame, component, or instance.' });
-    return;
+    if (selection.length === 0) {
+      figma.ui.postMessage({ type: 'error', message: 'No selection. Please select a frame, component, or instance.' });
+      return;
+    }
+
+    const node = selection[0];
+    if (!(node.type === 'FRAME' || node.type === 'COMPONENT' || node.type === 'INSTANCE')) {
+      figma.ui.postMessage({ type: 'error', message: 'Please select a frame, component, or instance.' });
+      return;
+    }
+
+    // Load fonts
+    await loadFonts(node);
+
+    // Serialize to JSON
+    const json = await serializeNode(node);
+
+    // Generate prompt
+    const prompt = `Generate pixel-perfect code for this Figma design. The design is described in the following JSON hierarchy:\n\n${JSON.stringify(json, null, 2)}\n\nPlease output the code in HTML/CSS/JS or your preferred framework, ensuring exact dimensions, colors, fonts, and layout.`;
+
+    figma.ui.postMessage({ type: 'result', prompt, json: JSON.stringify(json, null, 2), frameName: node.name });
+  } catch (error) {
+    console.error('Error in generatePrompt:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    figma.ui.postMessage({ type: 'error', message: 'An error occurred while generating the prompt: ' + errorMessage });
   }
-
-  const node = selection[0];
-  if (!(node.type === 'FRAME' || node.type === 'COMPONENT' || node.type === 'INSTANCE')) {
-    figma.ui.postMessage({ type: 'error', message: 'Please select a frame, component, or instance.' });
-    return;
-  }
-
-  // Load fonts
-  await loadFonts(node);
-
-  // Serialize to JSON
-  const json = serializeNode(node);
-
-  // Generate prompt
-  const prompt = `Generate pixel-perfect code for this Figma design. The design is described in the following JSON hierarchy:\n\n${JSON.stringify(json, null, 2)}\n\nPlease output the code in HTML/CSS/JS or your preferred framework, ensuring exact dimensions, colors, fonts, and layout.`;
-
-  figma.ui.postMessage({ type: 'result', prompt, json: JSON.stringify(json, null, 2), frameName: node.name });
 }
 
 async function loadFonts(node: SceneNode) {
@@ -245,7 +251,7 @@ async function loadFonts(node: SceneNode) {
   }
 }
 
-function serializeNode(node: SceneNode): any {
+async function serializeNode(node: SceneNode): Promise<any> {
   const base = {
     id: node.id,
     name: node.name,
@@ -282,7 +288,7 @@ function serializeNode(node: SceneNode): any {
       strokeWeight: node.strokeWeight,
       cornerRadius: node.cornerRadius,
       constraints: node.constraints,
-      children: node.children.map(serializeNode),
+      children: await Promise.all(node.children.map(serializeNode)),
     };
   } else if (node.type === 'TEXT') {
     return {
@@ -301,6 +307,39 @@ function serializeNode(node: SceneNode): any {
       textAlignHorizontal: node.textAlignHorizontal,
       textAlignVertical: node.textAlignVertical,
       lineHeight: node.lineHeight,
+      textCase: node.textCase,
+      textDecoration: node.textDecoration,
+      letterSpacing: node.letterSpacing,
+      paragraphSpacing: node.paragraphSpacing,
+      paragraphIndent: node.paragraphIndent,
+    };
+  } else if (node.type === 'VECTOR') {
+    return {
+      id: base.id,
+      name: base.name,
+      type: base.type,
+      x: base.x,
+      y: base.y,
+      width: base.width,
+      height: base.height,
+      visible: base.visible,
+      fills: node.fills,
+      strokes: node.strokes,
+      strokeWeight: node.strokeWeight,
+      vectorPaths: node.vectorPaths,
+      rotation: node.rotation,
+    };
+  } else if (node.type === 'GROUP') {
+    return {
+      id: base.id,
+      name: base.name,
+      type: base.type,
+      x: base.x,
+      y: base.y,
+      width: base.width,
+      height: base.height,
+      visible: base.visible,
+      children: await Promise.all(node.children.map(serializeNode)),
     };
   } else if (node.type === 'RECTANGLE' || node.type === 'ELLIPSE' || node.type === 'POLYGON' || node.type === 'STAR') {
     return {

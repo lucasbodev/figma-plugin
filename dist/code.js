@@ -203,24 +203,30 @@
     }
   };
   async function generatePrompt() {
-    const selection = figma.currentPage.selection;
-    if (selection.length === 0) {
-      figma.ui.postMessage({ type: "error", message: "No selection. Please select a frame, component, or instance." });
-      return;
-    }
-    const node = selection[0];
-    if (!(node.type === "FRAME" || node.type === "COMPONENT" || node.type === "INSTANCE")) {
-      figma.ui.postMessage({ type: "error", message: "Please select a frame, component, or instance." });
-      return;
-    }
-    await loadFonts(node);
-    const json = serializeNode(node);
-    const prompt = `Generate pixel-perfect code for this Figma design. The design is described in the following JSON hierarchy:
+    try {
+      const selection = figma.currentPage.selection;
+      if (selection.length === 0) {
+        figma.ui.postMessage({ type: "error", message: "No selection. Please select a frame, component, or instance." });
+        return;
+      }
+      const node = selection[0];
+      if (!(node.type === "FRAME" || node.type === "COMPONENT" || node.type === "INSTANCE")) {
+        figma.ui.postMessage({ type: "error", message: "Please select a frame, component, or instance." });
+        return;
+      }
+      await loadFonts(node);
+      const json = await serializeNode(node);
+      const prompt = `Generate pixel-perfect code for this Figma design. The design is described in the following JSON hierarchy:
 
 ${JSON.stringify(json, null, 2)}
 
 Please output the code in HTML/CSS/JS or your preferred framework, ensuring exact dimensions, colors, fonts, and layout.`;
-    figma.ui.postMessage({ type: "result", prompt, json: JSON.stringify(json, null, 2), frameName: node.name });
+      figma.ui.postMessage({ type: "result", prompt, json: JSON.stringify(json, null, 2), frameName: node.name });
+    } catch (error) {
+      console.error("Error in generatePrompt:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      figma.ui.postMessage({ type: "error", message: "An error occurred while generating the prompt: " + errorMessage });
+    }
   }
   async function loadFonts(node) {
     if (node.type === "TEXT") {
@@ -231,7 +237,7 @@ Please output the code in HTML/CSS/JS or your preferred framework, ensuring exac
       }
     }
   }
-  function serializeNode(node) {
+  async function serializeNode(node) {
     const base = {
       id: node.id,
       name: node.name,
@@ -267,7 +273,7 @@ Please output the code in HTML/CSS/JS or your preferred framework, ensuring exac
         strokeWeight: node.strokeWeight,
         cornerRadius: node.cornerRadius,
         constraints: node.constraints,
-        children: node.children.map(serializeNode)
+        children: await Promise.all(node.children.map(serializeNode))
       };
     } else if (node.type === "TEXT") {
       return {
@@ -285,7 +291,40 @@ Please output the code in HTML/CSS/JS or your preferred framework, ensuring exac
         fills: node.fills,
         textAlignHorizontal: node.textAlignHorizontal,
         textAlignVertical: node.textAlignVertical,
-        lineHeight: node.lineHeight
+        lineHeight: node.lineHeight,
+        textCase: node.textCase,
+        textDecoration: node.textDecoration,
+        letterSpacing: node.letterSpacing,
+        paragraphSpacing: node.paragraphSpacing,
+        paragraphIndent: node.paragraphIndent
+      };
+    } else if (node.type === "VECTOR") {
+      return {
+        id: base.id,
+        name: base.name,
+        type: base.type,
+        x: base.x,
+        y: base.y,
+        width: base.width,
+        height: base.height,
+        visible: base.visible,
+        fills: node.fills,
+        strokes: node.strokes,
+        strokeWeight: node.strokeWeight,
+        vectorPaths: node.vectorPaths,
+        rotation: node.rotation
+      };
+    } else if (node.type === "GROUP") {
+      return {
+        id: base.id,
+        name: base.name,
+        type: base.type,
+        x: base.x,
+        y: base.y,
+        width: base.width,
+        height: base.height,
+        visible: base.visible,
+        children: await Promise.all(node.children.map(serializeNode))
       };
     } else if (node.type === "RECTANGLE" || node.type === "ELLIPSE" || node.type === "POLYGON" || node.type === "STAR") {
       return {
