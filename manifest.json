@@ -1,0 +1,8 @@
+{
+  "name": "Promptifier — Export Prompt Design-to-Code",
+  "id": "com.example.promptifier",
+  "api": "1.0.0",
+  "main": "dist/code.js",
+  "ui": "src/ui.html",
+  "editorType": ["figma"]
+}

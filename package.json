@@ -1,0 +1,13 @@
+{
+  "name": "figma-plugin-promptifier",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "esbuild src/code.ts --bundle --outfile=dist/code.js",
+    "watch": "esbuild src/code.ts --bundle --outfile=dist/code.js --watch"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "*",
+    "esbuild": "*",
+    "typescript": "*"
+  }
+}
