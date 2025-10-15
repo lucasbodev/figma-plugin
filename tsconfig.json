@@ -10,7 +10,7 @@
     "module": "nodenext",
     "target": "es2017",
     "lib": ["es2017"],
-    "types": ["@figma/plugin-typings"],
+    "types": ["@figma/plugin-typings", "node"],
     // For nodejs:
     // "lib": ["esnext"],
     // "types": ["node"],
