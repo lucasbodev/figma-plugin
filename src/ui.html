@@ -6,75 +6,425 @@
   <title>Promptifier UI</title>
   <style>
     body {
-      font-family: Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       padding: 20px;
-      background-color: #f5f5f5;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #333;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
     }
-    button {
-      margin: 5px;
-      padding: 10px 15px;
-      background-color: #007bff;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    button:hover {
-      background-color: #0056b3;
-    }
-    textarea {
+    .container {
+      max-width: 600px;
       width: 100%;
-      height: 200px;
-      margin-top: 10px;
-      padding: 10px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-family: monospace;
-      resize: vertical;
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+      backdrop-filter: blur(10px);
+    }
+    h2 {
+      color: #4f46e5;
+      text-align: center;
+      margin-bottom: 20px;
+      font-weight: 600;
+    }
+    .generate-btn {
+      width: 100%;
+      padding: 18px 30px;
+      font-size: 18px;
+      font-weight: 600;
+      background: linear-gradient(135deg, #6366f1, #4f46e5);
+      border: none;
+      border-radius: 12px;
+      color: white;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+      position: relative;
+      overflow: hidden;
+    }
+    .generate-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+      transition: left 0.5s;
+    }
+    .generate-btn:hover::before {
+      left: 100%;
+    }
+    .generate-btn:hover {
+      background: linear-gradient(135deg, #4f46e5, #3730a3);
+      transform: translateY(-3px);
+      box-shadow: 0 8px 25px rgba(99, 102, 241, 0.6);
+    }
+    .loading {
+      display: none;
+      margin: 20px auto;
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #6366f1;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
     }
   </style>
 </head>
 <body>
-  <h2>Promptifier — Export Prompt Design-to-Code</h2>
-  <button id="generate">Générer</button>
-  <button id="copyPrompt">Copier le prompt</button>
-  <button id="copyJson">Copier le JSON</button>
-  <button id="close">Fermer</button>
-  <textarea id="promptArea" readonly placeholder="Prompt généré..."></textarea>
-  <textarea id="jsonArea" readonly placeholder="JSON hiérarchique..."></textarea>
+  <div class="container">
+    <h2>Promptifier 🔥 Export Prompt Design-to-Code</h2>
+    <p id="selectedFrame" style="color: #666; font-size: 14px; margin: 10px 0;">Aucune frame sélectionnée</p>
+    <button id="generate" class="generate-btn">⚡ Générer</button>
+    <div id="loading" class="loading"></div>
+    <div id="downloadSection" style="display: none; margin-top: 20px;">
+      <button id="downloadBtn" class="generate-btn" style="width: auto; padding: 12px 24px;">📦 Télécharger le dossier complet</button>
+      <button id="downloadJsonBtn" class="generate-btn" style="width: auto; padding: 12px 24px; margin-left: 10px;">📄 Télécharger le JSON</button>
+      <button id="clearBtn" class="generate-btn" style="width: auto; padding: 12px 24px; margin-left: 10px; background: linear-gradient(135deg, #ef4444, #dc2626);">🗑️ Effacer</button>
+    </div>
+  </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
+    let currentImages = [];
+    let currentHtml = '';
+    let currentJson = '';
+
     window.onmessage = (event) => {
       if (event.data.pluginMessage) {
         const msg = event.data.pluginMessage;
         if (msg.type === 'result') {
-          document.getElementById('promptArea').value = msg.prompt;
-          document.getElementById('jsonArea').value = msg.json;
+          // Masquer le loading
+          document.getElementById('loading').style.display = 'none';
+          // Stocker le JSON brut
+          currentJson = msg.json;
+          // Générer le HTML à partir du JSON
+          const jsonData = JSON.parse(msg.json);
+          currentHtml = generateFullHtml(jsonData);
+          // Stocker les images si présentes
+          if (msg.images && msg.images.length > 0) {
+            currentImages = msg.images;
+          }
+          // Afficher le bouton de téléchargement
+          document.getElementById('downloadSection').style.display = 'block';
+        } else if (msg.type === 'selection') {
+          if (msg.frameName) {
+            document.getElementById('selectedFrame').textContent = 'Frame sélectionnée: ' + msg.frameName;
+          } else {
+            document.getElementById('selectedFrame').textContent = 'Aucune frame sélectionnée';
+          }
         } else if (msg.type === 'error') {
+          document.getElementById('loading').style.display = 'none';
           alert(msg.message);
         }
       }
     };
 
+
+    document.getElementById('downloadBtn').addEventListener('click', async () => {
+      if (currentImages.length === 0 && !currentHtml) {
+        alert('Aucune donnée à télécharger');
+        return;
+      }
+
+      const zip = new JSZip();
+
+      // Ajouter le fichier HTML
+      if (currentHtml) {
+        zip.file('index.html', currentHtml);
+      }
+
+      // Ajouter les images et SVG si présentes
+      if (currentImages.length > 0) {
+        const imgFolder = zip.folder('assets/images');
+        const iconsFolder = zip.folder('assets/icons');
+        currentImages.forEach(image => {
+          console.log('Processing image:', image.path, 'data type:', typeof image.data, 'starts with:', image.data.substring(0, 50));
+          let arrayBuffer;
+          if (image.data.startsWith('<svg')) {
+            // Handle raw SVG string
+            const encoder = new TextEncoder();
+            arrayBuffer = encoder.encode(image.data).buffer;
+          } else if (image.data.startsWith('data:')) {
+            // Handle data URL (base64)
+            const base64Data = image.data.split(',')[1];
+            try {
+              const binaryData = atob(base64Data);
+              arrayBuffer = new ArrayBuffer(binaryData.length);
+              const uint8Array = new Uint8Array(arrayBuffer);
+              for (let i = 0; i < binaryData.length; i++) {
+                uint8Array[i] = binaryData.charCodeAt(i);
+              }
+            } catch (e) {
+              console.error('Error decoding data URL:', e, 'data:', image.data);
+              return; // Skip this image
+            }
+          } else {
+            // Handle base64 encoded data
+            try {
+              const binaryData = atob(image.data);
+              arrayBuffer = new ArrayBuffer(binaryData.length);
+              const uint8Array = new Uint8Array(arrayBuffer);
+              for (let i = 0; i < binaryData.length; i++) {
+                uint8Array[i] = binaryData.charCodeAt(i);
+              }
+            } catch (e) {
+              console.error('Error decoding base64 data:', e, 'data:', image.data);
+              return; // Skip this image
+            }
+          }
+          const fileName = image.path.split('/').pop();
+          if (image.path.startsWith('assets/icons/')) {
+            iconsFolder.file(fileName, arrayBuffer);
+          } else {
+            imgFolder.file(fileName, arrayBuffer);
+          }
+        });
+      }
+
+      // Générer et télécharger le ZIP
+      const content = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'design-export.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      currentImages = [];
+      currentHtml = '';
+      currentJson = '';
+      document.getElementById('downloadSection').style.display = 'none';
+    });
+
+    document.getElementById('downloadJsonBtn').addEventListener('click', () => {
+      if (!currentJson) {
+        alert('Aucune donnée JSON à télécharger');
+        return;
+      }
+
+      const blob = new Blob([currentJson], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'design-data.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
     document.getElementById('generate').onclick = () => {
+      document.getElementById('loading').style.display = 'block';
       parent.postMessage({ pluginMessage: { type: 'generate' } }, '*');
     };
 
-    document.getElementById('copyPrompt').onclick = () => {
-      navigator.clipboard.writeText(document.getElementById('promptArea').value).then(() => {
-        alert('Prompt copié!');
-      });
-    };
+    function parseColor(color) {
+      const r = Math.round(color.r * 255);
+      const g = Math.round(color.g * 255);
+      const b = Math.round(color.b * 255);
+      return `rgb(${r}, ${g}, ${b})`;
+    }
 
-    document.getElementById('copyJson').onclick = () => {
-      navigator.clipboard.writeText(document.getElementById('jsonArea').value).then(() => {
-        alert('JSON copié!');
-      });
-    };
+    function parseFills(fills) {
+      if (!fills || fills.length === 0) return {};
+      const fill = fills[0];
+      if (fill.type === 'SOLID') {
+        return { 'background-color': parseColor(fill.color) };
+      } else if (fill.type === 'IMAGE') {
+        const imagePath = fill.imagePath;
+        return { 'background-image': `url(${imagePath})`, 'background-size': 'cover' };
+      }
+      return {};
+    }
 
-    document.getElementById('close').onclick = () => {
-      parent.postMessage({ pluginMessage: { type: 'close' } }, '*');
-    };
+    function parseStroke(strokes, strokeWeight) {
+      if (!strokes || strokes.length === 0) return {};
+      const stroke = strokes[0];
+      if (stroke.type === 'SOLID') {
+        return { 'border': `${strokeWeight}px solid ${parseColor(stroke.color)}` };
+      }
+      return {};
+    }
+
+    function parseTextStyle(fontName, fontSize, textAlignHorizontal, fills, letterSpacing, lineHeight) {
+      const style = {};
+      if (fontName) {
+        style['font-family'] = fontName.family;
+        if (fontName.style && fontName.style.includes('Bold')) {
+          style['font-weight'] = 'bold';
+        }
+      }
+      style['font-size'] = `${fontSize}px`;
+      style['text-align'] = textAlignHorizontal.toLowerCase();
+      if (fills && fills.length > 0) {
+        style['color'] = parseColor(fills[0].color);
+      }
+      if (letterSpacing && letterSpacing.unit === 'PERCENT') {
+        style['letter-spacing'] = `${letterSpacing.value}%`;
+      }
+      if (lineHeight) {
+        if (lineHeight.unit === 'PIXELS') {
+          style['line-height'] = `${lineHeight.value}px`;
+        } else if (lineHeight.unit === 'PERCENT') {
+          style['line-height'] = `${lineHeight.value}%`;
+        }
+      }
+      return style;
+    }
+
+    function generateCSS(styles) {
+      let css = '';
+      for (const [selector, props] of Object.entries(styles)) {
+        css += `${selector} {\n`;
+        for (const [prop, value] of Object.entries(props)) {
+          css += `  ${prop}: ${value};\n`;
+        }
+        css += '}\n\n';
+      }
+      return css;
+    }
+
+    function generateHTML(node, styles, classCounter) {
+      if (node.type === 'FRAME' || node.type === 'INSTANCE' || node.type === 'GROUP') {
+        const style = {
+          'position': 'absolute',
+          'left': `${node.x}px`,
+          'top': `${node.y}px`,
+          'width': `${node.width}px`,
+          'height': `${node.height}px`,
+        };
+        if (node.layoutMode === 'VERTICAL') {
+          style['display'] = 'flex';
+          style['flex-direction'] = 'column';
+        } else if (node.layoutMode === 'HORIZONTAL') {
+          style['display'] = 'flex';
+          style['flex-direction'] = 'row';
+        }
+        if (node.primaryAxisAlignItems) {
+          style['justify-content'] = node.primaryAxisAlignItems.toLowerCase().replace('_', '-');
+        }
+        if (node.counterAxisAlignItems) {
+          style['align-items'] = node.counterAxisAlignItems.toLowerCase().replace('_', '-');
+        }
+        if (node.paddingLeft !== undefined) style['padding-left'] = `${node.paddingLeft}px`;
+        if (node.paddingRight !== undefined) style['padding-right'] = `${node.paddingRight}px`;
+        if (node.paddingTop !== undefined) style['padding-top'] = `${node.paddingTop}px`;
+        if (node.paddingBottom !== undefined) style['padding-bottom'] = `${node.paddingBottom}px`;
+        if (node.itemSpacing !== undefined) style['gap'] = `${node.itemSpacing}px`;
+        Object.assign(style, parseFills(node.fills));
+        Object.assign(style, parseStroke(node.strokes, node.strokeWeight));
+        if (node.cornerRadius !== undefined) style['border-radius'] = `${node.cornerRadius}px`;
+        if (node.opacity !== undefined) style['opacity'] = node.opacity;
+
+        const className = `.class-${classCounter[0]}`;
+        classCounter[0]++;
+        styles[className] = style;
+
+        let html = `<div class="${className.slice(1)}">`;
+        if (node.children) {
+          for (const child of node.children) {
+            html += generateHTML(child, styles, classCounter);
+          }
+        }
+        html += '</div>';
+        return html;
+      } else if (node.type === 'VECTOR' || node.type === 'VECTOR_GROUP') {
+        const style = {
+          'position': 'absolute',
+          'left': `${node.x}px`,
+          'top': `${node.y}px`,
+          'width': `${node.width}px`,
+          'height': `${node.height}px`,
+        };
+        Object.assign(style, parseFills(node.fills));
+        Object.assign(style, parseStroke(node.strokes, node.strokeWeight));
+
+        const className = `.class-${classCounter[0]}`;
+        classCounter[0]++;
+        styles[className] = style;
+
+        return `<img src="${node.svgPath}" class="${className.slice(1)}" alt="${node.name}">`;
+      } else if (node.type === 'RECTANGLE' || node.type === 'ELLIPSE') {
+        const style = {
+          'position': 'absolute',
+          'left': `${node.x}px`,
+          'top': `${node.y}px`,
+          'width': `${node.width}px`,
+          'height': `${node.height}px`,
+        };
+        if (node.type === 'ELLIPSE') {
+          style['border-radius'] = '50%';
+        }
+        Object.assign(style, parseFills(node.fills));
+        Object.assign(style, parseStroke(node.strokes, node.strokeWeight));
+        if (node.cornerRadius !== undefined) style['border-radius'] = `${node.cornerRadius}px`;
+        if (node.opacity !== undefined) style['opacity'] = node.opacity;
+
+        const className = `.class-${classCounter[0]}`;
+        classCounter[0]++;
+        styles[className] = style;
+
+        return `<div class="${className.slice(1)}"></div>`;
+      } else if (node.type === 'TEXT') {
+        const style = {
+          'position': 'absolute',
+          'left': `${node.x}px`,
+          'top': `${node.y}px`,
+          'width': `${node.width}px`,
+          'height': `${node.height}px`,
+        };
+        Object.assign(style, parseTextStyle(node.fontName, node.fontSize, node.textAlignHorizontal, node.fills, node.letterSpacing, node.lineHeight));
+        if (node.textCase === 'UPPER') {
+          style['text-transform'] = 'uppercase';
+        }
+        if (node.textDecoration) {
+          style['text-decoration'] = node.textDecoration.toLowerCase();
+        }
+
+        const className = `.class-${classCounter[0]}`;
+        classCounter[0]++;
+        styles[className] = style;
+
+        return `<div class="${className.slice(1)}">${node.characters}</div>`;
+      }
+      return '';
+    }
+
+    function generateFullHtml(jsonData) {
+      const styles = {};
+      const classCounter = [0];
+      const html = generateHTML(jsonData, styles, classCounter);
+      const css = generateCSS(styles);
+
+      return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Figma Design</title>
+    <style>
+${css}
+    </style>
+</head>
+<body>
+${html}
+</body>
+</html>`;
+    }
+
   </script>
 </body>
 </html>

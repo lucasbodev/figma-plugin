@@ -1,0 +1,3 @@
+export function generatePrompt(frameName: string, cleanJson: any): string {
+  return `Task: Generate HTML and CSS code that replicates this Figma design exactly.\n\nRules:\n- Use only the properties and values from the provided JSON.\n- Do not add defaults or assumptions.\n- For text elements, use the 'fills' color for text color.\n\nFrame Name: ${frameName}\n\nDesign Data (JSON):\n${JSON.stringify(cleanJson)}`;
+}
